@@ -25,17 +25,17 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: 'frontend/yarn.lock'
 
-      - name: Install dependencies (frontned)
-        working-directory: ./frontned
+      - name: Install dependencies (frontend)
+        working-directory: ./frontend
         run: yarn install --frozen-lockfile || yarn install
 
-      - name: Build frontned
-        working-directory: ./frontned
+      - name: Build frontend
+        working-directory: ./frontend
         run: yarn build
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./frontned/dist
+          publish_dir: frontned/dist
           publish_branch: gh-pages
