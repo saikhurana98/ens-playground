@@ -17,6 +17,12 @@ main{width:980px;padding:24px;background:white;border-radius:8px;box-shadow:0 8p
 .search-box button{padding:8px 12px;border-radius:6px;border:none;background:#0f172a;color:white;cursor:pointer}
 .search-box button[disabled]{opacity:0.6;cursor:default}
 
+/* Mode selector styles */
+.mode-selector{display:flex;gap:8px}
+.mode-btn{padding:8px 16px;border-radius:6px;border:1px solid #e6eef6;background:white;color:#64748b;cursor:pointer;font-size:14px;font-weight:500;transition:all 0.2s}
+.mode-btn:hover{background:#f8fafc}
+.mode-btn.active{background:#0f172a;color:white;border-color:#0f172a}
+
 .log-area{max-height:220px;overflow:auto;border:1px solid #eef4fb;padding:12px;border-radius:6px;background:#fbfdff}
 .log-empty{color:#8b98a9}
 .log-entry{padding:8px 6px;border-bottom:1px solid #eef4fb}
@@ -41,3 +47,25 @@ main{width:980px;padding:24px;background:white;border-radius:8px;box-shadow:0 8p
 .skeleton-sub{height:14px;width:30%;border-radius:6px}
 
 @keyframes skeleton-slide{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Modal styles */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;animation:fadeIn 0.2s ease}
+.modal-content{position:relative;background:white;border-radius:12px;padding:32px;max-width:600px;width:90%;max-height:90vh;overflow:auto;animation:slideUp 0.3s ease}
+.modal-close{position:absolute;top:16px;right:16px;background:transparent;border:none;font-size:32px;color:#8b98a9;cursor:pointer;line-height:1;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.2s}
+.modal-close:hover{background:#f1f5f9;color:#0f172a}
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* Transaction list styles */
+.transactions-section{margin-top:24px}
+.transactions-list{display:flex;flex-direction:column;gap:12px}
+.transaction-item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:13px}
+.tx-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e2e8f0}
+.tx-label{font-weight:600;color:#64748b}
+.tx-hash{color:#3b82f6;text-decoration:none;font-family:monospace;font-size:12px}
+.tx-hash:hover{text-decoration:underline}
+.tx-details{display:flex;flex-direction:column;gap:4px}
+.tx-row{display:flex;justify-content:space-between;align-items:center}
+.tx-key{color:#64748b;font-weight:500}
+.tx-value{color:#0f172a;font-family:monospace;font-size:12px}

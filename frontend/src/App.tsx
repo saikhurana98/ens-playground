@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { ethers } from 'ethers'
+import GraphView from './GraphView'
+import { INode, IEdge } from 'react-digraph'
 
 type LogEntry = {
   time: string
@@ -18,6 +20,7 @@ type Transaction = {
 
 export default function App() {
   const [query, setQuery] = useState('')
+  const [mode, setMode] = useState<'single' | 'graph'>('single')
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [profile, setProfile] = useState<{
     name?: string
@@ -32,6 +35,9 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [graphNodes, setGraphNodes] = useState<INode[]>([])
+  const [graphEdges, setGraphEdges] = useState<IEdge[]>([])
+  const [selectedNode, setSelectedNode] = useState<string | null>(null)
 
   const addLog = (level: LogEntry['level'], text: string) => {
     setLogs((s) => [
@@ -269,29 +275,110 @@ export default function App() {
     }
   }
 
+  const parseGraphInput = (input: string): { nodes: INode[], edges: IEdge[] } => {
+    // Parse input like: [(A,B),(C,D),(C,B),(D,A)]
+    // Extract pairs
+    const pairRegex = /\(([^,]+),([^)]+)\)/g
+    const pairs: [string, string][] = []
+    let match
+    
+    while ((match = pairRegex.exec(input)) !== null) {
+      pairs.push([match[1].trim(), match[2].trim()])
+    }
+
+    // Create unique nodes
+    const nodeSet = new Set<string>()
+    pairs.forEach(([from, to]) => {
+      nodeSet.add(from)
+      nodeSet.add(to)
+    })
+
+    const nodes: INode[] = Array.from(nodeSet).map((name, idx) => ({
+      id: name,
+      title: name,
+      type: 'empty',
+      x: (idx % 5) * 200 + 100,
+      y: Math.floor(idx / 5) * 150 + 100
+    }))
+
+    const edges: IEdge[] = pairs.map(([ from, to], idx) => ({
+      source: from,
+      target: to,
+      type: 'emptyEdge',
+    }))
+
+    return { nodes, edges }
+  }
+
+  const handleGraphSubmit = () => {
+    const { nodes, edges } = parseGraphInput(query)
+    setGraphNodes(nodes)
+    setGraphEdges(edges)
+    addLog('info', `Created graph with ${nodes.length} nodes and ${edges.length} edges`)
+  }
+
+  const handleNodeClick = (node: INode) => {
+    console.log('handleNodeClick called with node:', node)
+    setSelectedNode(node.id as string)
+    setShowModal(true) // Explicitly set modal to true
+    doLookup(node.title as string)
+  }
+
   const onSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    await doLookup(query.trim())
+    if (mode === 'graph') {
+      handleGraphSubmit()
+    } else {
+      await doLookup(query.trim())
+    }
   }
 
   return (
     <div className="app-root">
       <main>
         <h1>ENS Search</h1>
+        
+        <div className="mode-selector" style={{marginBottom:16}}>
+          <button 
+            className={mode === 'single' ? 'mode-btn active' : 'mode-btn'}
+            onClick={() => setMode('single')}
+            type="button"
+          >
+            Single Lookup
+          </button>
+          <button 
+            className={mode === 'graph' ? 'mode-btn active' : 'mode-btn'}
+            onClick={() => setMode('graph')}
+            type="button"
+          >
+            Graph View
+          </button>
+        </div>
+
         <form onSubmit={onSubmit} className="search-box">
           <input
             aria-label="search"
-            placeholder="example.eth or 0xabc..."
+            placeholder={mode === 'single' ? 'example.eth or 0xabc...' : '[(A,B),(C,D),(C,B),(D,A)]'}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={loading}
           />
           <div style={{marginTop:8}}>
             <button type="submit" disabled={loading}>
-              {loading ? 'Looking...' : 'Lookup'}
+              {loading ? 'Looking...' : mode === 'single' ? 'Lookup' : 'Build Graph'}
             </button>
           </div>
         </form>
+
+        {mode === 'graph' && graphNodes.length > 0 && (
+          <div style={{marginTop:24,border:'1px solid #e6eef6',borderRadius:8,overflow:'hidden'}}>
+            <GraphView 
+              nodes={graphNodes} 
+              edges={graphEdges} 
+              onSelectNode={handleNodeClick}
+            />
+          </div>
+        )}
 
         {showModal && (
           <div className="modal-overlay" onClick={() => setShowModal(false)}>
