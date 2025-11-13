@@ -1,4 +1,4 @@
-name: Deploy Frontned to GitHub Pages
+name: Deploy Frontend to GitHub Pages
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
 
@@ -37,5 +37,5 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: frontned/dist
+          publish_dir: frontend/dist
           publish_branch: gh-pages
