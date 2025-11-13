@@ -1,0 +1,315 @@
+import React, { useState } from 'react'
+import { ethers } from 'ethers'
+
+type LogEntry = {
+  time: string
+  level: 'info' | 'error'
+  text: string
+}
+
+export default function App() {
+  const [query, setQuery] = useState('')
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [profile, setProfile] = useState<{
+    name?: string
+    avatar?: string
+    description?: string
+    url?: string
+    address?: string
+    resolver?: string
+    reverse?: string
+    balance?: string
+  } | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const addLog = (level: LogEntry['level'], text: string) => {
+    setLogs((s) => [
+      { time: new Date().toISOString(), level, text },
+      ...s,
+    ])
+  }
+
+  async function doLookup(name: string) {
+    if (!name) return
+    setLoading(true)
+    addLog('info', `Resolving ENS name: ${name}`)
+    try {
+      // Use a public Ethereum JSON-RPC endpoint (no API key required by default)
+      const provider = new ethers.JsonRpcProvider('https://eth.llamarpc.com')
+
+      // If input looks like an address, treat it as an address; otherwise attempt ENS resolution
+      const isAddress = ethers.isAddress(name)
+      let resolvedAddress: string | null = null
+      if (isAddress) {
+        resolvedAddress = name
+        addLog('info', `Input is an address: ${name}`)
+      } else {
+        try {
+          resolvedAddress = await provider.resolveName(name)
+          addLog('info', `Resolved address: ${String(resolvedAddress)}`)
+        } catch (resolveErr: any) {
+          addLog('error', `resolveName failed: ${String(resolveErr)}`)
+        }
+      }
+
+      // Always log the namehash for ENS names
+      try {
+        const nh = ethers.namehash(name)
+        addLog('info', `namehash: ${nh}`)
+      } catch (nhErr: any) {
+        // namehash may throw for raw addresses; ignore
+      }
+
+      if (!resolvedAddress) {
+        addLog('error', `No address available for ${name}`)
+        setProfile(null)
+        return
+      }
+
+      // Basic on-chain diagnostics for the resolved address
+      try {
+        const balance = await provider.getBalance(resolvedAddress)
+        const balStr = `${ethers.formatEther(balance)} ETH`
+        addLog('info', `balance: ${balStr}`)
+        // set basic profile with address and balance now
+        setProfile((p) => ({ ...(p ?? {}), address: resolvedAddress, balance: balStr }))
+      } catch (balErr: any) {
+        addLog('error', `getBalance failed: ${String(balErr)}`)
+      }
+
+      try {
+        const code = await provider.getCode(resolvedAddress)
+        addLog('info', `code length: ${code ? code.length : 0}`)
+      } catch (codeErr: any) {
+        addLog('error', `getCode failed: ${String(codeErr)}`)
+      }
+
+      try {
+        const txCount = await provider.getTransactionCount(resolvedAddress)
+        addLog('info', `transactionCount: ${txCount}`)
+      } catch (txErr: any) {
+        addLog('error', `getTransactionCount failed: ${String(txErr)}`)
+      }
+
+      // Reverse lookup: check if address has a reverse ENS name
+      try {
+        const reverse = await provider.lookupAddress(resolvedAddress)
+        addLog('info', `reverse name: ${String(reverse)}`)
+        if (reverse) setProfile((p) => ({ ...(p ?? {}), reverse: reverse }))
+      } catch (revErr: any) {
+        addLog('error', `lookupAddress failed: ${String(revErr)}`)
+      }
+
+      // Resolver-specific data
+      let resolver: any = null
+      try {
+        resolver = await provider.getResolver(name)
+        if (!resolver) {
+          addLog('info', `No resolver found for ${name}`)
+        } else {
+          addLog('info', `resolver address: ${resolver.address ?? 'unknown'}`)
+          setProfile((p) => ({ ...(p ?? {}), resolver: resolver.address }))
+        }
+      } catch (resErr: any) {
+        addLog('error', `getResolver failed: ${String(resErr)}`)
+      }
+
+      if (resolver) {
+        // text record lookups removed per request
+
+        // contentHash
+        try {
+          // Some resolvers implement getContentHash
+          if (typeof resolver.getContentHash === 'function') {
+            const ch = await resolver.getContentHash()
+            addLog('info', `contentHash: ${String(ch)}`)
+          } else {
+            addLog('info', `getContentHash not available on resolver`)
+          }
+        } catch (chErr: any) {
+          addLog('error', `getContentHash failed: ${String(chErr)}`)
+        }
+
+        // Profile fields: try to fetch name, avatar and description explicitly
+        try {
+          // fetch name
+          try {
+            const profName = await resolver.getText('name')
+            if (profName) {
+              addLog('info', `profile.name = ${String(profName)}`)
+              setProfile((p) => ({ ...(p ?? {}), name: String(profName) }))
+            }
+          } catch (pnErr: any) {
+            // not critical
+          }
+
+          // fetch url
+          try {
+            const foundUrl = await resolver.getText('url')
+            if (foundUrl) {
+              addLog('info', `profile.url = ${String(foundUrl)}`)
+              setProfile((p) => ({ ...(p ?? {}), url: String(foundUrl) }))
+            }
+          } catch (urlErr: any) {
+            // ignore
+          }
+
+          // fetch avatar and normalize
+          try {
+            const avatar = await resolver.getText('avatar')
+            if (avatar) {
+              let avatarUrl = String(avatar)
+              if (avatarUrl.startsWith('ipfs://')) {
+                avatarUrl = avatarUrl.replace('ipfs://', 'https://ipfs.io/ipfs/')
+              }
+              // ignore complex eip155 schemes for now
+              addLog('info', `profile.avatar = ${avatarUrl}`)
+              setProfile((p) => ({ ...(p ?? {}), avatar: avatarUrl }))
+            }
+          } catch (avErr: any) {
+            // ignore
+          }
+
+          // fetch description
+          try {
+            const desc = await resolver.getText('description')
+            if (desc) {
+              addLog('info', `profile.description = ${String(desc)}`)
+              setProfile((p) => ({ ...(p ?? {}), description: String(desc) }))
+            }
+          } catch (descErr: any) {
+            // ignore
+          }
+        } catch (profileErr: any) {
+          addLog('error', `profile fields fetch failed: ${String(profileErr)}`)
+        }
+
+        // ETH address via resolver (if available)
+        try {
+          if (typeof resolver.getAddress === 'function') {
+            const ethAddr = await resolver.getAddress()
+            addLog('info', `resolver.getAddress() => ${String(ethAddr)}`)
+          } else if (typeof resolver.addr === 'function') {
+            const ethAddr = await resolver.addr('60')
+            addLog('info', `resolver.addr(60) => ${String(ethAddr)}`)
+          } else {
+            addLog('info', `resolver address lookup API not available`)
+          }
+        } catch (addrErr: any) {
+          addLog('error', `resolver address lookup failed: ${String(addrErr)}`)
+        }
+
+        // Try to fetch arbitrary coin addresses for common coin types (60 = ETH, 61 = ETC)
+        const coinTypes = [60, 61]
+        for (const coin of coinTypes) {
+          try {
+            if (typeof resolver.getAddress === 'function') {
+              const a = await resolver.getAddress(coin)
+              addLog('info', `resolver.getAddress(${coin}) => ${String(a)}`)
+            }
+          } catch (coinErr: any) {
+            addLog('error', `resolver.getAddress(${coin}) failed: ${String(coinErr)}`)
+          }
+        }
+
+        // explicit TXT lookups removed per request
+      }
+    } catch (err: any) {
+      addLog('error', `Lookup failed: ${String(err)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    await doLookup(query.trim())
+  }
+
+  return (
+    <div className="app-root">
+      <main>
+        <h1>ENS Search</h1>
+        <form onSubmit={onSubmit} className="search-box">
+          <input
+            aria-label="search"
+            placeholder="example.eth or 0xabc..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={loading}
+          />
+          <div style={{marginTop:8}}>
+            <button type="submit" disabled={loading}>
+              {loading ? 'Looking...' : 'Lookup'}
+            </button>
+          </div>
+        </form>
+
+        {loading && !profile && (
+          <section style={{marginTop:16}}>
+            <div className="profile-card">
+              <div className="profile-avatar skeleton skeleton-circle" />
+              <div className="profile-details">
+                <div className="skeleton skeleton-line" />
+                <div className="skeleton skeleton-sub" />
+                <div style={{height:12}} />
+                <div className="skeleton skeleton-line" style={{width:'90%'}} />
+                <div className="skeleton skeleton-line" style={{width:'80%'}} />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {profile && (
+          <section style={{marginTop:16}}>
+            <div className="profile-card">
+              <div className="profile-avatar">
+                {loading ? (
+                  <div className="skeleton skeleton-circle" />
+                ) : profile.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.avatar} alt={profile.name ?? 'avatar'} />
+                ) : (
+                  <div style={{color:'#9aa6b2'}}>{profile.name ? profile.name[0] : 'U'}</div>
+                )}
+              </div>
+              <div className="profile-details">
+                <h3 className="profile-name">
+                  {loading ? (
+                    <div className="skeleton skeleton-line" style={{display:'inline-block',width:'60%'}} />
+                  ) : profile.url ? (
+                    <a href={profile.url} target="_blank" rel="noreferrer" style={{color:'inherit',textDecoration:'none'}}>
+                      {profile.url}
+                    </a>
+                  ) : (
+                    profile.name ?? 'Unnamed'
+                  )}
+                </h3>
+                {profile.balance && <div className="profile-sub">{profile.balance}</div>}
+                {loading && !profile.description && <div className="skeleton skeleton-line" style={{width:'70%'}} />}
+                {profile.description && !loading && <p className="profile-desc">{profile.description}</p>}
+                <div style={{marginTop:12,color:'#9aa6b2'}}>
+                  <div>Address: {profile.address}</div>
+                  {profile.reverse && <div>Reverse: {profile.reverse}</div>}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        <section style={{marginTop:16}}>
+          <h2>Blockchain log</h2>
+          <div className="log-area" aria-live="polite">
+            {logs.length === 0 && <div className="log-empty">No logs yet</div>}
+            {logs.map((l, idx) => (
+              <div key={idx} className={`log-entry log-${l.level}`}>
+                <div className="log-time">{l.time}</div>
+                <div className="log-text">{l.text}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  )
+}
