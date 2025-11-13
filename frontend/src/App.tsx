@@ -7,6 +7,15 @@ type LogEntry = {
   text: string
 }
 
+type Transaction = {
+  hash: string
+  from: string
+  to: string | null
+  value: string
+  blockNumber: number
+  timestamp?: number
+}
+
 export default function App() {
   const [query, setQuery] = useState('')
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -20,7 +29,9 @@ export default function App() {
     reverse?: string
     balance?: string
   } | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
+  const [showModal, setShowModal] = useState(false)
 
   const addLog = (level: LogEntry['level'], text: string) => {
     setLogs((s) => [
@@ -32,6 +43,9 @@ export default function App() {
   async function doLookup(name: string) {
     if (!name) return
     setLoading(true)
+    setProfile(null)
+    setTransactions([])
+    setShowModal(true)
     addLog('info', `Resolving ENS name: ${name}`)
     try {
       // Use a public Ethereum JSON-RPC endpoint (no API key required by default)
@@ -214,6 +228,40 @@ export default function App() {
 
         // explicit TXT lookups removed per request
       }
+
+      // Fetch last 10 transactions using Etherscan API
+      if (resolvedAddress) {
+        try {
+          addLog('info', `Fetching recent transactions from Etherscan...`)
+          
+          // Get API key from environment variable (user needs to create .env file with VITE_ETHERSCAN_API_KEY)
+          const apiKey = import.meta.env.VITE_ETHERSCAN_API_KEY || 'YourApiKeyToken'
+          const etherscanUrl = `https://api.etherscan.io/api?module=account&action=txlist&address=${resolvedAddress}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc&apikey=${apiKey}`
+          
+          const response = await fetch(etherscanUrl)
+          const data = await response.json()
+          
+          if (data.status === '1' && data.result && Array.isArray(data.result)) {
+            const txsWithDetails: Transaction[] = data.result.map((tx: any) => ({
+              hash: tx.hash,
+              from: tx.from,
+              to: tx.to,
+              value: ethers.formatEther(tx.value),
+              blockNumber: parseInt(tx.blockNumber),
+              timestamp: parseInt(tx.timeStamp)
+            }))
+            
+            setTransactions(txsWithDetails)
+            addLog('info', `Found ${txsWithDetails.length} recent transactions`)
+          } else {
+            addLog('info', `No transactions found or Etherscan API error: ${data.message || 'Unknown error'}`)
+            setTransactions([])
+          }
+        } catch (txHistoryErr: any) {
+          addLog('error', `Failed to fetch transaction history: ${String(txHistoryErr)}`)
+          setTransactions([])
+        }
+      }
     } catch (err: any) {
       addLog('error', `Lookup failed: ${String(err)}`)
     } finally {
@@ -245,60 +293,120 @@ export default function App() {
           </div>
         </form>
 
-        {loading && !profile && (
-          <section style={{marginTop:16}}>
-            <div className="profile-card">
-              <div className="profile-avatar skeleton skeleton-circle" />
-              <div className="profile-details">
-                <div className="skeleton skeleton-line" />
-                <div className="skeleton skeleton-sub" />
-                <div style={{height:12}} />
-                <div className="skeleton skeleton-line" style={{width:'90%'}} />
-                <div className="skeleton skeleton-line" style={{width:'80%'}} />
-              </div>
-            </div>
-          </section>
-        )}
-
-        {profile && (
-          <section style={{marginTop:16}}>
-            <div className="profile-card">
-              <div className="profile-avatar">
-                {loading ? (
-                  <div className="skeleton skeleton-circle" />
-                ) : profile.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={profile.avatar} alt={profile.name ?? 'avatar'} />
-                ) : (
-                  <div style={{color:'#9aa6b2'}}>{profile.name ? profile.name[0] : 'U'}</div>
-                )}
-              </div>
-              <div className="profile-details">
-                <h3 className="profile-name">
-                  {loading ? (
-                    <div className="skeleton skeleton-line" style={{display:'inline-block',width:'60%'}} />
-                  ) : profile.url ? (
-                    <a href={profile.url} target="_blank" rel="noreferrer" style={{color:'inherit',textDecoration:'none'}}>
-                      {profile.url}
-                    </a>
-                  ) : (
-                    profile.name ?? 'Unnamed'
-                  )}
-                </h3>
-                {profile.balance && <div className="profile-sub">{profile.balance}</div>}
-                {loading && !profile.description && <div className="skeleton skeleton-line" style={{width:'70%'}} />}
-                {profile.description && !loading && <p className="profile-desc">{profile.description}</p>}
-                <div style={{marginTop:12,color:'#9aa6b2'}}>
-                  <div>Address: {profile.address}</div>
-                  {profile.reverse && <div>Reverse: {profile.reverse}</div>}
+        {showModal && (
+          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+              
+              {loading && !profile && (
+                <div className="profile-card">
+                  <div className="profile-avatar skeleton skeleton-circle" />
+                  <div className="profile-details">
+                    <div className="skeleton skeleton-line" />
+                    <div className="skeleton skeleton-sub" />
+                    <div style={{height:12}} />
+                    <div className="skeleton skeleton-line" style={{width:'90%'}} />
+                    <div className="skeleton skeleton-line" style={{width:'80%'}} />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {profile && (
+                <div className="profile-card">
+                  <div className="profile-avatar">
+                    {loading ? (
+                      <div className="skeleton skeleton-circle" />
+                    ) : profile.avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={profile.avatar} alt={profile.name ?? 'avatar'} />
+                    ) : (
+                      <div style={{color:'#9aa6b2'}}>{profile.name ? profile.name[0] : 'U'}</div>
+                    )}
+                  </div>
+                  <div className="profile-details">
+                    <h3 className="profile-name">
+                      {loading ? (
+                        <div className="skeleton skeleton-line" style={{display:'inline-block',width:'60%'}} />
+                      ) : profile.url ? (
+                        <a href={profile.url} target="_blank" rel="noreferrer" style={{color:'inherit',textDecoration:'none'}}>
+                          {profile.url}
+                        </a>
+                      ) : (
+                        profile.name ?? 'Unnamed'
+                      )}
+                    </h3>
+                    {profile.balance && <div className="profile-sub">{profile.balance}</div>}
+                    {loading && !profile.description && <div className="skeleton skeleton-line" style={{width:'70%'}} />}
+                    {profile.description && !loading && <p className="profile-desc">{profile.description}</p>}
+                    <div style={{marginTop:12,color:'#9aa6b2'}}>
+                      <div>Address: {profile.address}</div>
+                      {profile.reverse && <div>Reverse: {profile.reverse}</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {transactions.length > 0 && (
+                <div className="transactions-section">
+                  <h3 style={{marginTop:24,marginBottom:12,fontSize:18,fontWeight:600}}>Recent Transactions</h3>
+                  <div className="transactions-list">
+                    {transactions.map((tx, idx) => (
+                      <div key={tx.hash} className="transaction-item">
+                        <div className="tx-header">
+                          <span className="tx-label">#{transactions.length - idx}</span>
+                          <a 
+                            href={`https://etherscan.io/tx/${tx.hash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="tx-hash"
+                          >
+                            {tx.hash.substring(0, 10)}...{tx.hash.substring(tx.hash.length - 8)}
+                          </a>
+                        </div>
+                        <div className="tx-details">
+                          <div className="tx-row">
+                            <span className="tx-key">From:</span>
+                            <span className="tx-value">{tx.from.substring(0, 8)}...{tx.from.substring(tx.from.length - 6)}</span>
+                          </div>
+                          <div className="tx-row">
+                            <span className="tx-key">To:</span>
+                            <span className="tx-value">{tx.to ? `${tx.to.substring(0, 8)}...${tx.to.substring(tx.to.length - 6)}` : 'Contract Creation'}</span>
+                          </div>
+                          <div className="tx-row">
+                            <span className="tx-key">Value:</span>
+                            <span className="tx-value">{tx.value} ETH</span>
+                          </div>
+                          <div className="tx-row">
+                            <span className="tx-key">Block:</span>
+                            <span className="tx-value">{tx.blockNumber}</span>
+                          </div>
+                          {tx.timestamp && (
+                            <div className="tx-row">
+                              <span className="tx-key">Time:</span>
+                              <span className="tx-value">{new Date(tx.timestamp * 1000).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {loading && transactions.length === 0 && profile && (
+                <div style={{marginTop:24}}>
+                  <div className="skeleton skeleton-line" style={{width:'40%',marginBottom:12}} />
+                  <div className="skeleton skeleton-line" style={{height:60,marginBottom:8}} />
+                  <div className="skeleton skeleton-line" style={{height:60,marginBottom:8}} />
+                  <div className="skeleton skeleton-line" style={{height:60}} />
+                </div>
+              )}
             </div>
-          </section>
+          </div>
         )}
 
         <section style={{marginTop:16}}>
-          <h2>Blockchain log</h2>
+          <h2>Logs: </h2>
           <div className="log-area" aria-live="polite">
             {logs.length === 0 && <div className="log-empty">No logs yet</div>}
             {logs.map((l, idx) => (
